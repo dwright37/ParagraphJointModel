@@ -14,7 +14,7 @@ import math
 import numpy as np
 
 from tqdm import tqdm
-from util import read_passages, clean_words, test_f1, to_BIO, from_BIO
+from .util import read_passages, clean_words, test_f1, to_BIO, from_BIO
 
 
 class TimeDistributed(nn.Module):
@@ -177,7 +177,7 @@ class JointParagraphClassifier(nn.Module):
             self.sentence_attention
         ]
     
-    def forward(self, encoded_dict, transformation_indices, stance_label = None, rationale_label = None, sample_p=1, rationale_score = False):
+    def forward(self, encoded_dict, transformation_indices, stance_label = None, rationale_label = None, sample_p=1, rationale_score = False, stance_score = False):
         batch_indices, indices_by_batch, mask = transformation_indices # (batch_size, N_sep, N_token)
         bert_out = self.bert(**encoded_dict)[0] # (BATCH_SIZE, sequence_len, BERT_DIM)
         bert_tokens = bert_out[batch_indices, indices_by_batch, :]
@@ -207,13 +207,17 @@ class JointParagraphClassifier(nn.Module):
         else:
             rationale_loss = None
             
-        stance_out = torch.argmax(stance_out.cpu(), dim=-1).detach().numpy().tolist()
+        stance_preds = torch.argmax(stance_out.cpu(), dim=-1).detach().numpy().tolist()
         if rationale_score:
             rationale_pred = rationale_out.cpu()[:,:,1] # (Batch_size, N_sep)
         else:
             rationale_pred = torch.argmax(rationale_out.cpu(), dim=-1) # (Batch_size, N_sep)
         rationale_out = [rationale_pred_paragraph[mask].detach().numpy().tolist() for rationale_pred_paragraph, mask in zip(rationale_pred, sentence_mask.bool())]            
-        return rationale_out, stance_out, rationale_loss, stance_loss
+        
+        if stance_score:        
+            return rationale_out, stance_preds, rationale_loss, stance_loss, stance_out.cpu().detach().numpy().tolist()
+        else:
+            return rationale_out, stance_preds, rationale_loss, stance_loss
     
 class DomainAdaptationJointParagraphClassifier(nn.Module):
     def __init__(self, bert_path, bert_dim, dropout = 0.1, ignore_index=2):

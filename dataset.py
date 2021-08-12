@@ -1,7 +1,8 @@
 import random
 import jsonlines
 from torch.utils.data import Dataset
-from util import read_passages, clean_words, test_f1, to_BIO, from_BIO, clean_url, clean_num
+from typing import Union, List
+from .util import read_passages, clean_words, test_f1, to_BIO, from_BIO, clean_url, clean_num
 
 # If a paragraph is longer than MAX_SEQ_LEN, treat it as an another paragraph.
 class SciDTdataset(Dataset):
@@ -432,7 +433,7 @@ class SciFactParagraphBatchDataset(Dataset):
     """
     Dataset for a feeding a paragraph to a single BERT model.
     """
-    def __init__(self, corpus: str, claims: str, sep_token="</s>", k=0, train = True, dummy=True, 
+    def __init__(self, corpus: str, claims: Union[str,List], sep_token="</s>", k=0, train = True, dummy=True,
                  downsample_n = 0, downsample_p = 0.5):
         self.label_ind = {"NEI": 0, "rationale": 1}
         self.rev_label_ind = {i: l for (l, i) in self.label_ind.items()}
@@ -441,9 +442,10 @@ class SciFactParagraphBatchDataset(Dataset):
         
         self.samples = []
         self.excluded_pairs = []
-        corpus = {doc['doc_id']: doc for doc in jsonlines.open(corpus)}
-        
-        for claim in jsonlines.open(claims):
+        corpus = {int(doc['doc_id']): doc for doc in jsonlines.open(corpus)}
+
+        claims_iter = claims if isinstance(claims, list) else jsonlines.open(claims)
+        for claim in claims_iter:
             if k > 0 and "retrieved_doc_ids" in claim:
                 candidates = claim["retrieved_doc_ids"][:k]
             else:
@@ -456,7 +458,7 @@ class SciFactParagraphBatchDataset(Dataset):
                 all_candidates = candidates
                                 
             for doc_id in all_candidates:
-                doc = corpus[int(doc_id)]
+                doc = corpus[doc_id]
                 doc_id = str(doc_id)
 
                 if "discourse" in doc:

@@ -1,3 +1,4 @@
+import ipdb
 import codecs
 import numpy
 import glob
@@ -253,17 +254,18 @@ def rationale2json(true_pairs, predictions, excluded_pairs = None):
             claim_ids.append(pair["claim_id"])
     return [claims[claim_id] for claim_id in sorted(list(set(claim_ids)))]
 
-def stance2json(true_pairs, predictions, excluded_pairs = None):
+def stance2json(true_pairs, predictions, scores, excluded_pairs = None):
     claim_ids = []
     claims = {}
     idx2stance = ["NOT_ENOUGH_INFO", "SUPPORT", "CONTRADICT"]
     assert(len(true_pairs) == len(predictions))
-    for pair, prediction in zip(true_pairs, predictions):
+    assert(len(true_pairs) == len(scores))
+    for pair, prediction, score in zip(true_pairs, predictions, scores):
         claim_id = pair["claim_id"]
         claim_ids.append(claim_id)
 
         this_claim = claims.get(claim_id, {"claim_id": claim_id, "labels":{}})
-        this_claim["labels"][pair["doc_id"]] = {"label": idx2stance[prediction], 'confidence': 1}
+        this_claim["labels"][pair["doc_id"]] = {"label": idx2stance[prediction], 'score': score, 'confidence': 1}
         claims[claim_id] = this_claim
     if excluded_pairs is not None:
         for pair in excluded_pairs:
@@ -279,12 +281,14 @@ def merge_json(rationale_jsons, stance_jsons):
         result = {}
         if id in stance_json_dict:
             for k, v in rationale_json["evidence"].items():
-                if len(v) > 0 and stance_json_dict[id]["labels"][int(k)]["label"] is not "NOT_ENOUGH_INFO":
-                    result[k] = {
-                        "sentences": v,
-                        "label": stance_json_dict[id]["labels"][int(k)]["label"]
-                    }
-        jsons.append({"id":int(id), "evidence": result})
+                #if len(v) > 0 and stance_json_dict[id]["labels"][k]["label"] is not "NOT_ENOUGH_INFO":
+                result[k] = {
+                    "sentences": v,
+                    "label": stance_json_dict[id]["labels"][k]["label"],
+                    "score": stance_json_dict[id]["labels"][k]["score"]
+                }
+        #jsons.append({"id":int(id), "evidence": result})
+        jsons.append({"id":id, "evidence": result})
     return jsons
 
 def arg2param(args):

@@ -17,40 +17,42 @@ import random
 import numpy as np
 
 from tqdm import tqdm
-from util import arg2param, flatten, stance2json, rationale2json, merge_json
-from paragraph_model_dynamic import JointParagraphClassifier
-from dataset import SciFactParagraphBatchDataset
+from .util import arg2param, flatten, stance2json, rationale2json, merge_json
+from .paragraph_model_dynamic import JointParagraphClassifier
+from .dataset import SciFactParagraphBatchDataset
 
 import logging
 
-from lib.data import GoldDataset, PredictedDataset
-from lib import metrics
+from .lib.data import GoldDataset, PredictedDataset
+from .lib import metrics
 
 def reset_random_seed(seed):
     np.random.seed(seed)
     random.seed(seed)
     torch.manual_seed(seed)
 
-def predict(model, dataset):
+def predict(model, dataset, batch_size, model_name, tokenizer, device):
     model.eval()
     rationale_predictions = []
     stance_preds = []
+    stance_scores = []
     
     def remove_dummy(rationale_out):
         return [out[1:] for out in rationale_out]
 
     with torch.no_grad():
-        for batch in tqdm(DataLoader(dataset, batch_size = args.batch_size, shuffle=False)):
+        for batch in tqdm(DataLoader(dataset, batch_size = batch_size, shuffle=False)):
             encoded_dict = encode(tokenizer, batch)
             transformation_indices = token_idx_by_sentence(encoded_dict["input_ids"], 
-                                                           tokenizer.sep_token_id, args.repfile)
+                                                           tokenizer.sep_token_id, model_name)
             encoded_dict = {key: tensor.to(device) for key, tensor in encoded_dict.items()}
             transformation_indices = [tensor.to(device) for tensor in transformation_indices]
-            rationale_out, stance_out, _, _ = model(encoded_dict, transformation_indices)
+            rationale_out, stance_out, _, _, stance_score = model(encoded_dict, transformation_indices, stance_score=True)
             stance_preds.extend(stance_out)                
+            stance_scores.extend(stance_score)
             rationale_predictions.extend(remove_dummy(rationale_out))
 
-    return rationale_predictions, stance_preds
+    return rationale_predictions, stance_preds, stance_scores
 
 
 def encode(tokenizer, batch, max_sent_len = 512):
@@ -81,7 +83,7 @@ def encode(tokenizer, batch, max_sent_len = 512):
 
         return torch.cat(all_paragraphs, 0)
 
-    inputs = zip(batch["claim"], batch["paragraph"])
+    inputs = list(zip(batch["claim"], batch["paragraph"]))
     encoded_dict = tokenizer.batch_encode_plus(
         inputs,
         pad_to_max_length=True,add_special_tokens=True,
@@ -191,9 +193,9 @@ if __name__ == "__main__":
     print("Loaded saved model.")
         
     reset_random_seed(12345)
-    rationale_predictions, stance_preds = predict(model, dev_set)
+    rationale_predictions, stance_preds, stance_scores = predict(model, dev_set)
     rationale_json = rationale2json(dev_set.samples, rationale_predictions)
-    stance_json = stance2json(dev_set.samples, stance_preds)
+    stance_json = stance2json(dev_set.samples, stance_preds, stance_scores)
     stance_json = post_process_stance(rationale_json, stance_json)
     merged_json = merge_json(rationale_json, stance_json)
     if args.rationale_selection is not None:
